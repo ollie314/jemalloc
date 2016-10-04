@@ -117,7 +117,6 @@ extent_size_quantize_floor(size_t size)
 	pszind_t pind;
 
 	assert(size > 0);
-	assert(size - large_pad <= LARGE_MAXCLASS);
 	assert((size & PAGE_MASK) == 0);
 
 	assert(size != 0);
@@ -195,7 +194,7 @@ extent_heaps_insert(tsdn_t *tsdn, extent_heap_t extent_heaps[NPSIZES],
     extent_t *extent)
 {
 	size_t psz = extent_size_quantize_floor(extent_size_get(extent));
-	pszind_t pind = psz2ind(psz);
+	pszind_t pind = psz2ind_clamp(psz);
 
 	malloc_mutex_assert_owner(tsdn, &extent_arena_get(extent)->extents_mtx);
 
@@ -207,7 +206,7 @@ extent_heaps_remove(tsdn_t *tsdn, extent_heap_t extent_heaps[NPSIZES],
     extent_t *extent)
 {
 	size_t psz = extent_size_quantize_floor(extent_size_get(extent));
-	pszind_t pind = psz2ind(psz);
+	pszind_t pind = psz2ind_clamp(psz);
 
 	malloc_mutex_assert_owner(tsdn, &extent_arena_get(extent)->extents_mtx);
 
@@ -364,6 +363,7 @@ extent_first_best_fit(tsdn_t *tsdn, arena_t *arena,
 	malloc_mutex_assert_owner(tsdn, &arena->extents_mtx);
 
 	pind = psz2ind(extent_size_quantize_ceil(size));
+	assert(pind < NPSIZES);
 	for (i = pind; i < NPSIZES; i++) {
 		extent_t *extent = extent_heap_first(&extent_heaps[i]);
 		if (extent != NULL)
@@ -419,13 +419,16 @@ extent_recycle(tsdn_t *tsdn, arena_t *arena, extent_hooks_t **r_extent_hooks,
 		 * course cannot be recycled).
 		 */
 		assert(PAGE_ADDR2BASE(new_addr) == new_addr);
+		assert(pad == 0);
+		assert(alignment <= PAGE);
 		prev = extent_lookup(tsdn, (void *)((uintptr_t)new_addr - PAGE),
 		    false);
 		assert(prev == NULL || extent_past_get(prev) == new_addr);
 	}
 
 	size = usize + pad;
-	alloc_size = s2u(size + PAGE_CEILING(alignment) - PAGE);
+	alloc_size = (new_addr != NULL) ? size : s2u(size +
+	    PAGE_CEILING(alignment) - PAGE);
 	/* Beware size_t wrap-around. */
 	if (alloc_size < usize)
 		return (NULL);
