@@ -313,6 +313,7 @@ o="$ac_objext"
 a="a"
 exe="$ac_exeext"
 libprefix="lib"
+link_whole_archive="0"
 DSO_LDFLAGS='-shared -Wl,-soname,$(@F)'
 RPATH='-Wl,-rpath,$(1)'
 SOREV="${so}.${rev}"
@@ -426,7 +427,6 @@ case "${host}" in
   *-*-mingw* | *-*-cygwin*)
 	abi="pecoff"
 	force_tls="0"
-	force_lazy_lock="1"
 	maps_coalesce="0"
 	RPATH=""
 	so="dll"
@@ -443,6 +443,7 @@ case "${host}" in
         else
 	  importlib="${so}"
 	  DSO_LDFLAGS="-shared"
+	  link_whole_archive="1"
 	fi
 	a="lib"
 	libprefix=""
@@ -480,6 +481,7 @@ AC_SUBST([o])
 AC_SUBST([a])
 AC_SUBST([exe])
 AC_SUBST([libprefix])
+AC_SUBST([link_whole_archive])
 AC_SUBST([DSO_LDFLAGS])
 AC_SUBST([EXTRA_LDFLAGS])
 AC_SUBST([SOREV])
@@ -491,6 +493,15 @@ AC_SUBST([MKLIB])
 AC_SUBST([ARFLAGS])
 AC_SUBST([AROUT])
 AC_SUBST([CC_MM])
+
+dnl Determine whether libm must be linked to use e.g. log(3).
+AC_SEARCH_LIBS([log], [m], , [AC_MSG_ERROR([Missing math functions])])
+if test "x$ac_cv_search_log" != "xnone required" ; then
+  LM="$ac_cv_search_log"
+else
+  LM=
+fi
+AC_SUBST(LM)
 
 JE_COMPILABLE([__attribute__ syntax],
               [static __attribute__((unused)) void foo(void){}],
@@ -938,9 +949,9 @@ fi
 AC_MSG_CHECKING([configured backtracing method])
 AC_MSG_RESULT([$backtrace_method])
 if test "x$enable_prof" = "x1" ; then
-  if test "x$abi" != "xpecoff"; then
-    dnl Heap profiling uses the log(3) function.
-    LIBS="$LIBS -lm"
+  dnl Heap profiling uses the log(3) function.
+  if test "x$LM" != "x" ; then
+    LIBS="$LIBS $LM"
   fi
 
   AC_DEFINE([JEMALLOC_PROF], [ ])
