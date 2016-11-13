@@ -49,11 +49,12 @@ arena_extent_cache_alloc_locked(tsdn_t *tsdn, arena_t *arena,
     extent_hooks_t **r_extent_hooks, void *new_addr, size_t usize, size_t pad,
     size_t alignment, bool *zero, bool slab)
 {
+	bool commit = true;
 
 	malloc_mutex_assert_owner(tsdn, &arena->lock);
 
 	return (extent_alloc_cache(tsdn, arena, r_extent_hooks, new_addr, usize,
-	    pad, alignment, zero, slab));
+	    pad, alignment, zero, &commit, slab));
 }
 
 extent_t *
@@ -421,8 +422,8 @@ arena_decay_deadline_init(arena_t *arena)
 	if (arena->decay.time > 0) {
 		nstime_t jitter;
 
-		nstime_init(&jitter, prng_range(&arena->decay.jitter_state,
-		    nstime_ns(&arena->decay.interval), false));
+		nstime_init(&jitter, prng_range_u64(&arena->decay.jitter_state,
+		    nstime_ns(&arena->decay.interval)));
 		nstime_add(&arena->decay.deadline, &jitter);
 	}
 }
@@ -681,7 +682,7 @@ arena_stash_dirty(tsdn_t *tsdn, arena_t *arena, extent_hooks_t **r_extent_hooks,
 	for (extent = qr_next(&arena->extents_dirty, qr_link); extent !=
 	    &arena->extents_dirty; extent = next) {
 		size_t npages;
-		bool zero;
+		bool zero, commit;
 		UNUSED extent_t *textent;
 
 		npages = extent_size_get(extent) >> LG_PAGE;
@@ -691,9 +692,10 @@ arena_stash_dirty(tsdn_t *tsdn, arena_t *arena, extent_hooks_t **r_extent_hooks,
 		next = qr_next(extent, qr_link);
 		/* Allocate. */
 		zero = false;
+		commit = false;
 		textent = extent_alloc_cache_locked(tsdn, arena, r_extent_hooks,
 		    extent_base_get(extent), extent_size_get(extent), 0, PAGE,
-		    &zero, false);
+		    &zero, &commit, false);
 		assert(textent == extent);
 		assert(zero == extent_zeroed_get(extent));
 		extent_ring_remove(extent);
@@ -943,9 +945,8 @@ arena_slab_alloc(tsdn_t *tsdn, arena_t *arena, szind_t binind,
 	extent_t *slab;
 	arena_slab_data_t *slab_data;
 	extent_hooks_t *extent_hooks = EXTENT_HOOKS_INITIALIZER;
-	bool zero;
+	bool zero = false;
 
-	zero = false;
 	slab = arena_extent_cache_alloc_locked(tsdn, arena, &extent_hooks, NULL,
 	    bin_info->slab_size, 0, PAGE, &zero, true);
 	if (slab == NULL) {
@@ -1540,7 +1541,7 @@ ssize_t
 arena_decay_time_default_get(void)
 {
 
-	return ((ssize_t)atomic_read_z((size_t *)&decay_time_default));
+	return ((ssize_t)atomic_read_zu((size_t *)&decay_time_default));
 }
 
 bool
@@ -1549,7 +1550,7 @@ arena_decay_time_default_set(ssize_t decay_time)
 
 	if (!arena_decay_time_valid(decay_time))
 		return (true);
-	atomic_write_z((size_t *)&decay_time_default, (size_t)decay_time);
+	atomic_write_zu((size_t *)&decay_time_default, (size_t)decay_time);
 	return (false);
 }
 
@@ -1679,7 +1680,7 @@ arena_new(tsdn_t *tsdn, unsigned ind)
 		 * deterministic seed.
 		 */
 		arena->offset_state = config_debug ? ind :
-		    (uint64_t)(uintptr_t)arena;
+		    (size_t)(uintptr_t)arena;
 	}
 
 	arena->dss_prec = extent_dss_prec_get();
@@ -1695,7 +1696,7 @@ arena_new(tsdn_t *tsdn, unsigned ind)
 	    WITNESS_RANK_ARENA_LARGE))
 		return (NULL);
 
-	for (i = 0; i < NPSIZES; i++) {
+	for (i = 0; i < NPSIZES+1; i++) {
 		extent_heap_new(&arena->extents_cached[i]);
 		extent_heap_new(&arena->extents_retained[i]);
 	}
