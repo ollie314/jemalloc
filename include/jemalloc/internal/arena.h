@@ -182,7 +182,7 @@ struct arena_s {
 	 * PRNG state for cache index randomization of large allocation base
 	 * pointers.
 	 */
-	uint64_t		offset_state;
+	size_t			offset_state;
 
 	dss_prec_t		dss_prec;
 
@@ -212,8 +212,8 @@ struct arena_s {
 	 * Heaps of extents that were previously allocated.  These are used when
 	 * allocating extents, in an attempt to re-use address space.
 	 */
-	extent_heap_t		extents_cached[NPSIZES];
-	extent_heap_t		extents_retained[NPSIZES];
+	extent_heap_t		extents_cached[NPSIZES+1];
+	extent_heap_t		extents_retained[NPSIZES+1];
 	/*
 	 * Ring sentinel used to track unused dirty memory.  Dirty memory is
 	 * managed as an LRU of cached extents.
@@ -365,21 +365,21 @@ JEMALLOC_INLINE void
 arena_metadata_add(arena_t *arena, size_t size)
 {
 
-	atomic_add_z(&arena->stats.metadata, size);
+	atomic_add_zu(&arena->stats.metadata, size);
 }
 
 JEMALLOC_INLINE void
 arena_metadata_sub(arena_t *arena, size_t size)
 {
 
-	atomic_sub_z(&arena->stats.metadata, size);
+	atomic_sub_zu(&arena->stats.metadata, size);
 }
 
 JEMALLOC_INLINE size_t
 arena_metadata_get(arena_t *arena)
 {
 
-	return (atomic_read_z(&arena->stats.metadata));
+	return (atomic_read_zu(&arena->stats.metadata));
 }
 
 JEMALLOC_INLINE bool

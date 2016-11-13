@@ -101,10 +101,10 @@ ph_proto(, extent_heap_, extent_heap_t, extent_t)
 
 extent_t	*extent_alloc_cache_locked(tsdn_t *tsdn, arena_t *arena,
     extent_hooks_t **r_extent_hooks, void *new_addr, size_t usize, size_t pad,
-    size_t alignment, bool *zero, bool slab);
+    size_t alignment, bool *zero, bool *commit, bool slab);
 extent_t	*extent_alloc_cache(tsdn_t *tsdn, arena_t *arena,
     extent_hooks_t **r_extent_hooks, void *new_addr, size_t usize, size_t pad,
-    size_t alignment, bool *zero, bool slab);
+    size_t alignment, bool *zero, bool *commit, bool slab);
 extent_t	*extent_alloc_wrapper(tsdn_t *tsdn, arena_t *arena,
     extent_hooks_t **r_extent_hooks, void *new_addr, size_t usize, size_t pad,
     size_t alignment, bool *zero, bool *commit, bool slab);
@@ -325,8 +325,8 @@ extent_addr_randomize(tsdn_t *tsdn, extent_t *extent, size_t alignment)
 	if (alignment < PAGE) {
 		unsigned lg_range = LG_PAGE -
 		    lg_floor(CACHELINE_CEILING(alignment));
-		uint64_t r =
-		    prng_lg_range(&extent_arena_get(extent)->offset_state,
+		size_t r =
+		    prng_lg_range_zu(&extent_arena_get(extent)->offset_state,
 		    lg_range, true);
 		uintptr_t random_offset = ((uintptr_t)r) << (LG_PAGE -
 		    lg_range);

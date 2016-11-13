@@ -83,7 +83,7 @@ enum {
 static uint8_t	malloc_slow_flags;
 
 JEMALLOC_ALIGNED(CACHELINE)
-const size_t	pind2sz_tab[NPSIZES] = {
+const size_t	pind2sz_tab[NPSIZES+1] = {
 #define	PSZ_yes(lg_grp, ndelta, lg_delta)				\
 	(((ZU(1)<<lg_grp) + (ZU(ndelta)<<lg_delta))),
 #define	PSZ_no(lg_grp, ndelta, lg_delta)
@@ -93,6 +93,7 @@ const size_t	pind2sz_tab[NPSIZES] = {
 #undef PSZ_yes
 #undef PSZ_no
 #undef SC
+	(LARGE_MAXCLASS + PAGE)
 };
 
 JEMALLOC_ALIGNED(CACHELINE)
@@ -753,8 +754,10 @@ malloc_ncpus(void)
 	SYSTEM_INFO si;
 	GetSystemInfo(&si);
 	result = si.dwNumberOfProcessors;
-#elif defined(JEMALLOC_GLIBC_MALLOC_HOOK)
+#elif defined(JEMALLOC_GLIBC_MALLOC_HOOK) && defined(CPU_COUNT)
 	/*
+	 * glibc >= 2.6 has the CPU_COUNT macro.
+	 *
 	 * glibc's sysconf() uses isspace().  glibc allocates for the first time
 	 * *before* setting up the isspace tables.  Therefore we need a
 	 * different method to get the number of CPUs.
@@ -1899,6 +1902,7 @@ JEMALLOC_EXPORT void *(*__memalign_hook)(size_t alignment, size_t size) =
     je_memalign;
 # endif
 
+#ifdef CPU_COUNT
 /*
  * To enable static linking with glibc, the libc specific malloc interface must
  * be implemented also, so none of glibc's malloc.o functions are added to the
@@ -1917,6 +1921,9 @@ int	__posix_memalign(void** r, size_t a, size_t s)
     PREALIAS(je_posix_memalign);
 #undef PREALIAS
 #undef ALIAS
+
+#endif
+
 #endif
 
 /*
