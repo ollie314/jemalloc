@@ -130,7 +130,8 @@ struct arena_bin_s {
 
 	/*
 	 * Heap of non-full slabs.  This heap is used to assure that new
-	 * allocations come from the non-full slab that is lowest in memory.
+	 * allocations come from the non-full slab that is oldest/lowest in
+	 * memory.
 	 */
 	extent_heap_t		slabs_nonfull;
 
@@ -164,7 +165,7 @@ struct arena_s {
 	 * perspective:
 	 * 1) Thread assignment (modifies nthreads) is synchronized via atomics.
 	 * 2) Bin-related operations are protected by bin locks.
-	 * 3) Chunk-related operations are protected by this mutex.
+	 * 3) Extent-related operations are protected by this mutex.
 	 */
 	malloc_mutex_t		lock;
 
@@ -183,6 +184,9 @@ struct arena_s {
 	 * pointers.
 	 */
 	size_t			offset_state;
+
+	/* Extent serial number generator state. */
+	size_t			extent_sn_next;
 
 	dss_prec_t		dss_prec;
 
@@ -224,8 +228,8 @@ struct arena_s {
 
 	/* User-configurable extent hook functions. */
 	union {
-		extent_hooks_t		*extent_hooks;
-		void			*extent_hooks_pun;
+		extent_hooks_t	*extent_hooks;
+		void		*extent_hooks_pun;
 	};
 
 	/* Cache of extent structures that were allocated via base_alloc(). */
@@ -320,6 +324,7 @@ void	arena_stats_merge(tsdn_t *tsdn, arena_t *arena, unsigned *nthreads,
 unsigned	arena_nthreads_get(arena_t *arena, bool internal);
 void	arena_nthreads_inc(arena_t *arena, bool internal);
 void	arena_nthreads_dec(arena_t *arena, bool internal);
+size_t	arena_extent_sn_next(arena_t *arena);
 arena_t	*arena_new(tsdn_t *tsdn, unsigned ind);
 void	arena_boot(void);
 void	arena_prefork0(tsdn_t *tsdn, arena_t *arena);

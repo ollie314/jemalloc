@@ -43,17 +43,6 @@ AC_CACHE_CHECK([whether $1 is compilable],
                                [$4=no])])
 ])
 
-dnl JE_RUNNABLE(label, hcode, mcode, rvar)
-AC_DEFUN([JE_RUNNABLE],
-[
-AC_CACHE_CHECK([whether $1 is runnable],
-               [$4],
-               [AC_RUN_IFELSE([AC_LANG_PROGRAM([$2],
-                                               [$3])],
-                              [$4=yes],
-                              [$4=no])])
-])
-
 dnl ============================================================================
 
 CONFIG=`echo ${ac_configure_args} | sed -e 's#'"'"'\([^ ]*\)'"'"'#\1#g'`
@@ -182,7 +171,6 @@ fi
 if test "x$CFLAGS" = "x" ; then
   no_CFLAGS="yes"
   if test "x$GCC" = "xyes" ; then
-dnl    JE_CFLAGS_APPEND([-std=gnu99])
     JE_CFLAGS_APPEND([-std=gnu11])
     if test "x$je_cv_cflags_appended" = "x-std=gnu11" ; then
       AC_DEFINE_UNQUOTED([JEMALLOC_HAS_RESTRICT])
@@ -366,7 +354,6 @@ maps_coalesce="1"
 case "${host}" in
   *-*-darwin* | *-*-ios*)
 	abi="macho"
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	RPATH=""
 	LD_PRELOAD_VAR="DYLD_INSERT_LIBRARIES"
 	so="dylib"
@@ -379,21 +366,17 @@ case "${host}" in
   *-*-freebsd*)
 	abi="elf"
 	AC_DEFINE([JEMALLOC_SYSCTL_VM_OVERCOMMIT], [ ])
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	force_lazy_lock="1"
 	;;
   *-*-dragonfly*)
 	abi="elf"
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	;;
   *-*-openbsd*)
 	abi="elf"
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	force_tls="0"
 	;;
   *-*-bitrig*)
 	abi="elf"
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	;;
   *-*-linux-android)
 	dnl syscall(2) and secure_getenv(3) are exposed by _GNU_SOURCE.
@@ -401,7 +384,6 @@ case "${host}" in
 	abi="elf"
 	AC_DEFINE([JEMALLOC_HAS_ALLOCA_H])
 	AC_DEFINE([JEMALLOC_PROC_SYS_VM_OVERCOMMIT_MEMORY], [ ])
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_DONTNEED], [ ])
 	AC_DEFINE([JEMALLOC_THREADED_INIT], [ ])
 	AC_DEFINE([JEMALLOC_C11ATOMICS])
 	force_tls="0"
@@ -413,7 +395,6 @@ case "${host}" in
 	abi="elf"
 	AC_DEFINE([JEMALLOC_HAS_ALLOCA_H])
 	AC_DEFINE([JEMALLOC_PROC_SYS_VM_OVERCOMMIT_MEMORY], [ ])
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_DONTNEED], [ ])
 	AC_DEFINE([JEMALLOC_THREADED_INIT], [ ])
 	AC_DEFINE([JEMALLOC_USE_CXX_THROW], [ ])
 	default_munmap="0"
@@ -430,11 +411,9 @@ case "${host}" in
                           [abi="elf"],
                           [abi="aout"])
 	AC_MSG_RESULT([$abi])
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	;;
   *-*-solaris2*)
 	abi="elf"
-	AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
 	RPATH='-Wl,-R,$(1)'
 	dnl Solaris needs this for sigwait().
 	CPPFLAGS="$CPPFLAGS -D_POSIX_PTHREAD_SEMANTICS"
@@ -1320,6 +1299,14 @@ if test "x$abi" != "xpecoff" ; then
   AC_CHECK_LIB([pthread], [pthread_create], [LIBS="$LIBS -lpthread"],
                [AC_SEARCH_LIBS([pthread_create], , ,
                                AC_MSG_ERROR([libpthread is missing]))])
+  JE_COMPILABLE([pthread_atfork(3)], [
+#include <pthread.h>
+], [
+  pthread_atfork((void *)0, (void *)0, (void *)0);
+], [je_cv_pthread_atfork])
+  if test "x${je_cv_pthread_atfork}" = "xyes" ; then
+    AC_DEFINE([JEMALLOC_HAVE_PTHREAD_ATFORK], [ ])
+  fi
 fi
 
 CPPFLAGS="$CPPFLAGS -D_REENTRANT"
@@ -1592,12 +1579,33 @@ dnl Check for madvise(2).
 JE_COMPILABLE([madvise(2)], [
 #include <sys/mman.h>
 ], [
-	{
-		madvise((void *)0, 0, 0);
-	}
+	madvise((void *)0, 0, 0);
 ], [je_cv_madvise])
 if test "x${je_cv_madvise}" = "xyes" ; then
-  AC_DEFINE([JEMALLOC_HAVE_MADVISE], [ ])
+  dnl Check for madvise(..., MADV_FREE).
+  JE_COMPILABLE([madvise(..., MADV_FREE)], [
+#include <sys/mman.h>
+], [
+	madvise((void *)0, 0, MADV_FREE);
+], [je_cv_madv_free])
+  if test "x${je_cv_madv_free}" = "xyes" ; then
+    AC_DEFINE([JEMALLOC_PURGE_MADVISE_FREE], [ ])
+  fi
+
+  dnl Check for madvise(..., MADV_DONTNEED).
+  JE_COMPILABLE([madvise(..., MADV_DONTNEED)], [
+#include <sys/mman.h>
+], [
+	madvise((void *)0, 0, MADV_DONTNEED);
+], [je_cv_madv_dontneed])
+  if test "x${je_cv_madv_dontneed}" = "xyes" ; then
+    AC_DEFINE([JEMALLOC_PURGE_MADVISE_DONTNEED], [ ])
+  fi
+
+  if test "x${je_cv_madv_free}" = "xyes" \
+       -o "x${je_cv_madv_dontneed}" = "xyes" ; then
+    AC_DEFINE([JEMALLOC_HAVE_MADVISE], [ ])
+  fi
 fi
 
 dnl ============================================================================
@@ -1660,11 +1668,7 @@ fi
 dnl ============================================================================
 dnl Check for os_unfair_lock operations as provided on Darwin.
 
-dnl Run the test program rather than merely compiling so that dyld lazy symbol
-dnl binding doesn't result in a false positive if building with a version of
-dnl XCode (>7) that supports the API on a system that is too old to actually
-dnl implement it (<10.12).
-JE_RUNNABLE([Darwin os_unfair_lock_*()], [
+JE_COMPILABLE([Darwin os_unfair_lock_*()], [
 #include <os/lock.h>
 ], [
 	os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
